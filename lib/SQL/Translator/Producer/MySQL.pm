@@ -450,14 +450,9 @@ sub create_table
     }
 
     #
-    # Indices
+    # Covered fields
     #
-    my @index_defs;
-    my %indexed_fields;
-    for my $index ( $table->get_indices ) {
-        push @index_defs, create_index($index, $options);
-        $indexed_fields{ $_ } = 1 for $index->fields;
-    }
+    my @covered_fields;
 
     #
     # Constraints -- need to handle more than just FK. -ky
@@ -466,16 +461,24 @@ sub create_table
     my @constraints = $table->get_constraints;
     for my $c ( @constraints ) {
         my $constr = create_constraint($c, $options);
-        push @constraint_defs, $constr if($constr);
-        
-         unless ( $indexed_fields{ ($c->fields())[0] } || $c->type ne FOREIGN_KEY ) {
-             push @index_defs, "INDEX ($qf" . ($c->fields())[0] . "$qf)";
-             $indexed_fields{ ($c->fields())[0] } = 1;
-         }
+        if ( $constr ){
+          push @constraint_defs, $constr;
+          push @covered_fields, [$c->fields];
+        }
+    }
+
+    #
+    # Indices
+    #
+    my @index_defs;
+    for my $index ( $table->get_indices ) {
+        next if has_covering_index(\@covered_fields, $index);
+        push @index_defs, create_index($index, $options);
+        push @covered_fields, [$index->fields];
     }
 
     $create .= join(",\n", map { "  $_" } 
-                    @field_defs, @index_defs, @constraint_defs
+                    @field_defs, @constraint_defs, @index_defs
                     );
 
     #
@@ -486,6 +489,25 @@ sub create_table
 #    $create .= ";\n\n";
 
     return $drop ? ($drop,$create) : $create;
+}
+
+sub has_covering_index {
+  my ($idxs, $idx) = @_;
+
+  my @fields = $idx->fields;
+
+COVERED: for my $t (@$idxs) {
+    my $i = 0;
+    for my $fs (@fields) {
+      my $fd = $t->[$i++];
+      next COVERED unless defined $fd;
+      next COVERED if $fd->name ne $fs;
+    }
+
+    return 1;
+  }
+
+  return;
 }
 
 sub quote_table_name {
