@@ -501,7 +501,7 @@ COVERED: for my $t (@$idxs) {
     for my $fs (@fields) {
       my $fd = $t->[$i++];
       next COVERED unless defined $fd;
-      next COVERED if $fd->name ne $fs;
+      next COVERED if $fd ne $fs;
     }
 
     return 1;
